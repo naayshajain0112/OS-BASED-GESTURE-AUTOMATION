@@ -1,13 +1,10 @@
-# AirSense Final with Voice + Auto App Detection + Smooth Scroll + Screenshot Gesture + Text Selection
+# AirSense Final with Auto App Detection + Smooth Scroll + Screenshot Gesture + Text Selection
 import sys, threading, time, math
 from collections import deque
 import os, subprocess
 import datetime
-import pyvirtualcam
 
-
-import cv2, mediapipe as mp, pyautogui, speech_recognition as sr
-
+import cv2, mediapipe as mp, pyautogui
 
 # ----------------------------- CONFIG -----------------------------
 SMOOTHING = 4.0
@@ -40,43 +37,6 @@ prev_x = prev_y = 0.0
 USER = os.environ["USERNAME"]
 DESKTOP = rf"C:\Users\{USER}\Desktop"
 
-WINDOWS_FOLDERS = {
-    "desktop": DESKTOP,
-    "downloads": rf"C:\Users\{USER}\Downloads",
-    "documents": rf"C:\Users\{USER}\Documents",
-    "pictures": rf"C:\Users\{USER}\Pictures",
-    "videos": rf"C:\Users\{USER}\Videos",
-}
-
-
-# ----------------------------- APP SEARCH -----------------------------
-SEARCH_CACHE = {}
-SEARCH_DIRS = [
-    rf"C:\Users\{USER}\AppData\Roaming",
-    rf"C:\Users\{USER}\AppData\Local",
-    r"C:\Program Files",
-    r"C:\Program Files (x86)",
-    r"C:\Windows",
-    DESKTOP
-]
-
-
-def fast_search_app(app_name):
-    app_name = app_name.lower()
-
-    if app_name in SEARCH_CACHE:
-        return SEARCH_CACHE[app_name]
-
-    target = app_name + ".exe"
-
-    for base in SEARCH_DIRS:
-        for root, dirs, files in os.walk(base):
-            if target in (f.lower() for f in files):
-                full = os.path.join(root, target)
-                SEARCH_CACHE[app_name] = full
-                return full
-    return None
-
 
 # ----------------------------- SCROLL -----------------------------
 def smooth_scroll_pixels(p):
@@ -88,68 +48,6 @@ def smooth_scroll_pixels(p):
         time.sleep(SCROLL_STEP_DELAY)
 
 
-# ----------------------------- COMMAND EXECUTION -----------------------------
-def execute_command(cmd_text):
-    cmd_text = cmd_text.lower()
-    print("Heard:", cmd_text)
-
-    try:
-        if cmd_text.startswith("open "):
-            name = cmd_text.replace("open ", "").strip()
-
-            if name in WINDOWS_FOLDERS:
-                os.startfile(WINDOWS_FOLDERS[name]); return
-            if os.path.exists(name):
-                os.startfile(name); return
-
-            exe = fast_search_app(name)
-            if exe: os.startfile(exe); return
-
-            print("App not found:", name)
-            return
-
-        if cmd_text.startswith("close "):
-            name = cmd_text.replace("close ", "").strip()
-            subprocess.call(["taskkill", "/F", "/IM", name + ".exe"])
-            return
-
-        if "volume up" in cmd_text: pyautogui.press("volumeup")
-        if "volume down" in cmd_text: pyautogui.press("volumedown")
-
-        if "shutdown" in cmd_text:
-            subprocess.call(["shutdown", "/s", "/t", "0"])
-
-        if cmd_text.startswith("search "):
-            q = cmd_text.replace("search ", "")
-            import webbrowser
-            webbrowser.open("https://www.google.com/search?q=" + q.replace(" ", "+"))
-
-    except Exception as e:
-        print("Error:", e)
-
-
-# ----------------------------- VOICE THREAD -----------------------------
-def voice_listener():
-    r = sr.Recognizer()
-    mic = sr.Microphone()
-
-    with mic as source:
-        r.adjust_for_ambient_noise(source)
-
-    def callback(recognizer, audio):
-        try:
-            text = recognizer.recognize_google(audio)
-            if text.strip(): execute_command(text)
-        except:
-            pass
-
-    stop = r.listen_in_background(mic, callback, phrase_time_limit=2)
-
-    while shared["running"]:
-        time.sleep(0.05)
-    stop(wait_for_stop=False)
-
-
 # ----------------------------- CV THREAD -----------------------------
 def cv_worker():
     global prev_x, prev_y
@@ -159,9 +57,6 @@ def cv_worker():
     hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7, min_tracking_confidence=0.7)
 
     cap = cv2.VideoCapture(0)
-    # Virtual camera setup (OBS will read this)
-    cam = pyvirtualcam.Camera(width=640, height=480, fps=30)
-    print("Virtual Camera Started")
 
     if not cap.isOpened():
         print("Camera not found.")
@@ -252,7 +147,7 @@ def cv_worker():
                             gesture = "click"
 
             # ------------------------------------------------------
-            # SCREENSHOT 
+            # SCREENSHOT
             # ------------------------------------------------------
             my = lm[12].y
             py_f = lm[20].y
@@ -289,14 +184,6 @@ def cv_worker():
 
         shared["gesture"] = gesture
         shared["status_text"] = f"Gesture: {gesture}"
-        # Convert frame for virtual camera
-        frame_bgr = frame  # original frame from webcam
-        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-
-        # Send to virtual cam
-        cam.send(frame_rgb)
-        cam.sleep_until_next_frame()
-
 
     cap.release()
 
@@ -304,10 +191,7 @@ def cv_worker():
 # ----------------------------- MAIN -----------------------------
 def main():
     t1 = threading.Thread(target=cv_worker, daemon=True)
-    t2 = threading.Thread(target=voice_listener, daemon=True)
-
     t1.start()
-    t2.start()
 
     while shared["running"]:
         time.sleep(0.1)
